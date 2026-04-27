@@ -1,0 +1,391 @@
+# ================================================================
+# Peer Review Platform — Backend Setup, Testing & Frontend Guide
+# ================================================================
+
+
+## STEP 1 — MySQL Setup
+-----------------------
+1. Open MySQL Workbench or MySQL terminal
+2. Run the file:  src/main/resources/schema.sql
+3. This creates the database and all 7 tables automatically
+
+
+## STEP 2 — Configure application.properties
+--------------------------------------------
+Open:  src/main/resources/application.properties
+
+Change this line to your MySQL password:
+    spring.datasource.password=your_mysql_password
+
+If your MySQL username is not "root", change this too:
+    spring.datasource.username=root
+
+
+## STEP 3 — Run the Backend
+----------------------------
+Open terminal in the project folder and run:
+
+    mvn clean install
+    mvn spring-boot:run
+
+Server starts at:  http://localhost:8080
+
+
+## STEP 4 — Test with Postman
+==============================
+
+Download Postman: https://www.postman.com/downloads/
+
+--- AUTH ENDPOINTS (no token needed) ---
+
+1. REGISTER
+   POST  http://localhost:8080/api/auth/register
+   Headers: Content-Type: application/json
+   Body (raw JSON):
+   {
+     "name": "John Student",
+     "email": "john@test.com",
+     "password": "123456",
+     "confirmPassword": "123456",
+     "role": "student"
+   }
+   Response: { "token": "eyJ...", "name": "John", "email": "...", "role": "student" }
+
+2. LOGIN
+   POST  http://localhost:8080/api/auth/login
+   Headers: Content-Type: application/json
+   Body:
+   {
+     "email": "john@test.com",
+     "password": "123456"
+   }
+   Response: { "token": "eyJ...", "role": "student" }
+   *** COPY THE TOKEN — you need it for all other requests ***
+
+3. LOGIN as Admin (pre-seeded account)
+   POST  http://localhost:8080/api/auth/login
+   Body:
+   {
+     "email": "admin@peerreview.com",
+     "password": "admin123"
+   }
+
+--- HOW TO SEND TOKEN IN POSTMAN ---
+For all protected endpoints:
+  Go to Headers tab → Add:
+  Key:   Authorization
+  Value: Bearer eyJ...YOUR_TOKEN_HERE...
+
+--- ASSIGNMENT ENDPOINTS ---
+
+4. GET ALL ASSIGNMENTS  (student or admin)
+   GET  http://localhost:8080/api/assignments
+   Headers: Authorization: Bearer <token>
+
+5. CREATE ASSIGNMENT  (admin only)
+   POST  http://localhost:8080/api/assignments
+   Headers: Authorization: Bearer <admin-token>
+            Content-Type: application/json
+   Body:
+   {
+     "title": "Machine Learning Project",
+     "deadline": "2026-03-30"
+   }
+
+6. DELETE ASSIGNMENT  (admin only)
+   DELETE  http://localhost:8080/api/assignments/1
+   Headers: Authorization: Bearer <admin-token>
+
+--- SUBMISSION ENDPOINTS ---
+
+7. UPLOAD PROJECT FILE  (student only)
+   POST  http://localhost:8080/api/submissions/upload?assignmentId=1
+   Headers: Authorization: Bearer <student-token>
+   Body: form-data
+     Key: file   Type: File   Value: choose your file
+
+8. GET ALL SUBMISSIONS  (admin only)
+   GET  http://localhost:8080/api/submissions
+   Headers: Authorization: Bearer <admin-token>
+
+9. GET MY SUBMISSIONS  (student)
+   GET  http://localhost:8080/api/submissions/mine
+   Headers: Authorization: Bearer <student-token>
+
+--- REVIEW ENDPOINTS ---
+
+10. SUBMIT REVIEW  (student)
+    POST  http://localhost:8080/api/reviews
+    Headers: Authorization: Bearer <student-token>
+             Content-Type: application/json
+    Body:
+    {
+      "submissionId": 1,
+      "comment": "Great work, very detailed explanation!",
+      "rating": 4
+    }
+
+11. GET MY FEEDBACK  (student views reviews on their own work)
+    GET  http://localhost:8080/api/reviews/my-feedback
+    Headers: Authorization: Bearer <student-token>
+
+12. GET ALL REVIEWS  (admin)
+    GET  http://localhost:8080/api/reviews
+    Headers: Authorization: Bearer <admin-token>
+
+--- TEAM & CHAT ENDPOINTS ---
+
+13. GET ALL TEAMS
+    GET  http://localhost:8080/api/teams
+    Headers: Authorization: Bearer <token>
+
+14. CREATE TEAM  (admin)
+    POST  http://localhost:8080/api/teams
+    Headers: Authorization: Bearer <admin-token>
+             Content-Type: application/json
+    Body:  { "name": "Data Science Team" }
+
+15. SEND CHAT MESSAGE
+    POST  http://localhost:8080/api/teams/1/messages
+    Headers: Authorization: Bearer <token>
+             Content-Type: application/json
+    Body:  { "text": "Hello team! Let's start the project." }
+
+16. GET CHAT HISTORY
+    GET  http://localhost:8080/api/teams/1/messages
+    Headers: Authorization: Bearer <token>
+
+--- STUDENT MANAGEMENT (admin) ---
+
+17. GET ALL STUDENTS
+    GET  http://localhost:8080/api/students
+    Headers: Authorization: Bearer <admin-token>
+
+18. REMOVE A STUDENT
+    DELETE  http://localhost:8080/api/students/2
+    Headers: Authorization: Bearer <admin-token>
+
+
+## STEP 5 — Connect Frontend to Backend
+========================================
+
+In your React project, update Login.jsx and Register.jsx
+to call the API instead of using localStorage.
+
+--- Login.jsx (replace handleLogin) ---
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await fetch("http://localhost:8080/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password,
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        alert(err.error || "Login failed");
+        return;
+      }
+
+      const data = await response.json();
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("currentUser", JSON.stringify({
+        name: data.name,
+        email: data.email,
+        role: data.role,
+      }));
+
+      if (data.role === "admin") {
+        navigate("/admin-dashboard");
+      } else {
+        navigate("/student-dashboard");
+      }
+    } catch (err) {
+      alert("Server error. Is the backend running?");
+    }
+  };
+
+
+--- Register.jsx (replace handleSubmit) ---
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (formData.password !== formData.confirmPassword) {
+      alert("Passwords do not match!");
+      return;
+    }
+    try {
+      const response = await fetch("http://localhost:8080/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: formData.name,
+          email: formData.email,
+          password: formData.password,
+          confirmPassword: formData.confirmPassword,
+          role: formData.role,
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        alert(err.error || "Registration failed");
+        return;
+      }
+
+      alert("Registered Successfully!");
+      navigate("/login");
+    } catch (err) {
+      alert("Server error. Is the backend running?");
+    }
+  };
+
+
+--- Helper: apiCall utility (create src/api.js in React) ---
+
+  const BASE_URL = "http://localhost:8080";
+
+  export function getToken() {
+    return localStorage.getItem("token");
+  }
+
+  export async function apiCall(endpoint, method = "GET", body = null) {
+    const headers = {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + getToken(),
+    };
+
+    const options = { method, headers };
+    if (body) options.body = JSON.stringify(body);
+
+    const res = await fetch(BASE_URL + endpoint, options);
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || "Request failed");
+    }
+    return res.json();
+  }
+
+
+--- StudentDashboard.jsx — Replace localStorage chat with API ---
+
+  // Load assignments from backend
+  useEffect(() => {
+    apiCall("/api/assignments").then(setAssignments).catch(console.error);
+  }, []);
+
+  // Load teams from backend
+  useEffect(() => {
+    apiCall("/api/teams").then(setTeams).catch(console.error);
+  }, []);
+
+  // Load chat messages from backend (replaces localStorage)
+  const enterTeamRoom = async (team) => {
+    setSelectedTeam(team);
+    const msgs = await apiCall("/api/teams/" + team.id + "/messages");
+    setMessages(msgs);
+  };
+
+  // Send message to backend (replaces localStorage.setItem)
+  const handleSendMessage = async () => {
+    if (!newMessage.trim()) return;
+    const msg = await apiCall(
+      "/api/teams/" + selectedTeam.id + "/messages",
+      "POST",
+      { text: newMessage }
+    );
+    setMessages((prev) => [...prev, msg]);
+    setNewMessage("");
+  };
+
+  // Submit review to backend
+  const handleSubmitReview = async (submissionId, comment, rating) => {
+    await apiCall("/api/reviews", "POST", { submissionId, comment, rating: parseInt(rating) });
+    alert("Review submitted!");
+  };
+
+  // Load feedback summary
+  useEffect(() => {
+    if (activeSection === "feedback") {
+      apiCall("/api/reviews/my-feedback").then(setReviews).catch(console.error);
+    }
+  }, [activeSection]);
+
+
+--- AdminDashboard.jsx — Replace mock data with API ---
+
+  // Load assignments
+  useEffect(() => {
+    apiCall("/api/assignments").then(setAssignments).catch(console.error);
+  }, []);
+
+  // Create assignment
+  const handleCreateAssignment = async () => {
+    await apiCall("/api/assignments", "POST", {
+      title: newAssignment.title,
+      deadline: newAssignment.deadline,
+    });
+    apiCall("/api/assignments").then(setAssignments);
+    alert("Assignment Created!");
+  };
+
+  // Load students
+  useEffect(() => {
+    if (activeSection === "students") {
+      apiCall("/api/students").then(setStudents).catch(console.error);
+    }
+  }, [activeSection]);
+
+  // Remove student
+  const handleRemoveStudent = async (id) => {
+    await apiCall("/api/students/" + id, "DELETE");
+    setStudents((prev) => prev.filter((s) => s.id !== id));
+  };
+
+  // Load all submissions
+  useEffect(() => {
+    if (activeSection === "submissions") {
+      apiCall("/api/submissions").then(setSubmissions).catch(console.error);
+    }
+  }, [activeSection]);
+
+  // Track team chat (replaces localStorage.getItem)
+  useEffect(() => {
+    if (activeSection === "tracking") {
+      apiCall("/api/teams").then(async (teams) => {
+        const allMessages = {};
+        for (const team of teams) {
+          const msgs = await apiCall("/api/teams/" + team.id + "/messages");
+          allMessages[team.id] = msgs;
+        }
+        setTeamMessages(allMessages);
+      });
+    }
+  }, [activeSection]);
+
+
+## COMMON ERRORS & FIXES
+==========================
+
+ERROR: "Access Denied" (403)
+  → You are using wrong role token.
+  → Admin endpoints need admin token. Student endpoints need student token.
+
+ERROR: "Could not create connection to database"
+  → MySQL is not running. Start it first.
+  → Wrong password in application.properties.
+
+ERROR: CORS error in browser
+  → Make sure app.cors.allowed-origins=http://localhost:5173 in properties.
+  → React must run on port 5173 (default Vite port).
+
+ERROR: "Table doesn't exist"
+  → You forgot to run schema.sql in MySQL.
+
+ERROR: JWT expired
+  → Login again to get a new token.
